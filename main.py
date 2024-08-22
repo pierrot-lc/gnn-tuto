@@ -8,3 +8,4 @@ dataset = Dataset.from_files(
     root / "NCI1_graph_labels.txt",
     root / "NCI1_node_labels.txt",
 )
+g = dataset[0]

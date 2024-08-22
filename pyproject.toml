@@ -1,0 +1,19 @@
+[project]
+name = "gnn-tuto"
+version = "0.1.0"
+description = "GNN tutorial with Jax and Equinox"
+authors = [
+    {name = "Pierrot LC", email = "pierrotlc@proton.me"},
+]
+requires-python = "==3.12.*"
+readme = "README.md"
+license = {text = "MIT"}
+
+[tool.ruff]
+src = ["src"]
+
+[tool.ruff.lint]
+ignore = [
+    "F722",  # Jaxtype will throw false positives.
+    "E731",  # Ignore lambda assignements (why is this even a thing?).
+]
