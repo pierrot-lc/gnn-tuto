@@ -1,9 +1,32 @@
+---
+defaults:
+  - _self_
+
 dataset:
   root: "./data/NCI1"
   prefix: "NCI1"
   key: 0
 
 model:
-  hidden_dim: 16
+  hidden_dim: 92
   n_layers: 4
   key: 66
+
+trainer:
+  learning_rate: 3e-5
+  batch_size: 32
+  train_iter: 10000
+  eval_iter: 20
+  eval_freq: 100
+  key: 42
+
+wandb:
+  entity: pierrotlc
+  group: none
+  mode: ${..mode}
+
+mode: offline
+
+hydra:
+  job:
+    chdir: true

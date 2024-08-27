@@ -45,13 +45,41 @@ class ModelConfig:
 
 
 @dataclass
+class TrainerConfig:
+    learning_rate: float
+    batch_size: int
+    train_iter: int
+    eval_iter: int
+    eval_freq: int
+    key: PRNGKeyArray
+
+    def __post_init__(self):
+        self.key = jr.key(self.key)
+
+
+@dataclass
+class WandbConfig:
+    entity: str
+    group: str | None
+    mode: str
+
+    def __post_init__(self):
+        if self.group.lower() == "none":
+            self.group = None
+
+
+@dataclass
 class MainConfig:
     dataset: DatasetConfig
     model: ModelConfig
+    trainer: TrainerConfig
+    wandb: WandbConfig
 
     @classmethod
     def from_dict(cls, config: DictConfig) -> "MainConfig":
         return cls(
             dataset=DatasetConfig(**config.dataset),
             model=ModelConfig(**config.model),
+            trainer=TrainerConfig(**config.trainer),
+            wandb=WandbConfig(**config.wandb),
         )

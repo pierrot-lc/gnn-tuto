@@ -66,7 +66,7 @@ class GraphData(eqx.Module):
             edges=jnp.stack([g.edges for g in graphs]),
             nodes=jnp.stack([g.nodes for g in graphs]),
             mask=jnp.stack([g.mask for g in graphs]),
-            label=jnp.stack([g.nodes for g in graphs]),
+            label=jnp.stack([g.label for g in graphs]),
         )
 
 
@@ -94,6 +94,18 @@ class Dataset:
     @property
     def n_atoms(self) -> int:
         return max(jnp.max(g.nodes) for g in self.graphs) + 1
+
+    @classmethod
+    def split(
+        cls, dataset: "Dataset", split: float, *, key: PRNGKeyArray
+    ) -> tuple["Dataset", "Dataset"]:
+        assert 0 <= split <= 1
+
+        training_size = int(len(dataset) * split)
+        perm = jr.permutation(key, len(dataset))
+        training_graphs = [dataset.graphs[i] for i in perm[:training_size]]
+        val_graphs = [dataset.graphs[i] for i in perm[training_size:]]
+        return cls(training_graphs), cls(val_graphs)
 
     @classmethod
     def from_files(
