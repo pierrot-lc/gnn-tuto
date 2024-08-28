@@ -111,10 +111,12 @@ def train(
     *,
     key: PRNGKeyArray,
 ):
-    n_params = count_params(model)
-    logger.summary["n_params"] = n_params
     keys = key_source(key)
     opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
+
+    logger.summary["n_params"] = count_params(model)
+    logger.summary["training_size"] = len(train_dataset)
+    logger.summary["validation_size"] = len(val_dataset)
 
     for batch_id, batch in tqdm(
         enumerate(train_dataset.iter(batch_size, train_iter, next(keys))),
@@ -126,7 +128,7 @@ def train(
 
         if batch_id % eval_freq == 0:
             metrics = eval(model, train_dataset, batch_size, eval_iter, key=next(keys))
-            logger.log({"train": metrics})
+            logger.log({"train": metrics}, step=batch_id)
 
             metrics = eval(model, val_dataset, batch_size, eval_iter, key=next(keys))
-            logger.log({"val": metrics})
+            logger.log({"val": metrics}, step=batch_id)

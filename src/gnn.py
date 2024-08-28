@@ -24,7 +24,9 @@ class GConvLayer(eqx.Module):
     ) -> Float[Array, "n_nodes hidden_dim"]:
         m = jax.vmap(self.linear)(x)
         m = jax.nn.relu(m)
-        m = a @ m
+        d = jsparse.sparsify(jnp.sum)(a, axis=1, keepdims=True)
+        d = jsparse.todense(d)
+        m = a @ m / jnp.where(d == 0, 1, d)
         x = jax.vmap(self.norm)(x + m)
         return x
 
@@ -65,7 +67,7 @@ class GNN(eqx.Module):
         def scan_fn(x, layer):
             conv, hidden = eqx.combine(layer, static)
             x = conv(x, a)
-            x = jax.vmap(hidden)(x)
+            # x = jax.vmap(hidden)(x)
             return x, None
 
         x, _ = jax.lax.scan(scan_fn, x, dynamic)
