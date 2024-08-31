@@ -9,29 +9,14 @@ from omegaconf import DictConfig
 
 @dataclass
 class DatasetConfig:
-    root: Path
-    prefix: str
-    key: PRNGKeyArray
+    n_nodes: int
+    n_graphs: int
+    generation_key: PRNGKeyArray
+    split_key: PRNGKeyArray
 
     def __post_init__(self):
-        self.root = Path(to_absolute_path(self.root))
-        self.key = jr.key(self.key)
-
-    @property
-    def adjacency_file(self) -> Path:
-        return self.root / f"{self.prefix}_A.txt"
-
-    @property
-    def graph_id_file(self) -> Path:
-        return self.root / f"{self.prefix}_graph_indicator.txt"
-
-    @property
-    def graph_labels_file(self) -> Path:
-        return self.root / f"{self.prefix}_graph_labels.txt"
-
-    @property
-    def node_labels_file(self) -> Path:
-        return self.root / f"{self.prefix}_node_labels.txt"
+        self.generation_key = jr.key(self.generation_key)
+        self.split_key = jr.key(self.split_key)
 
 
 @dataclass

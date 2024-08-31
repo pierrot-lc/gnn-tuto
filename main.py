@@ -4,7 +4,7 @@ import wandb
 from configs.template import MainConfig
 from omegaconf import DictConfig, OmegaConf
 from src.dataset import Dataset
-from src.gnn import GNNClassifier
+from src.gnn import GNNRanking
 from src.trainer import train
 
 
@@ -12,19 +12,17 @@ from src.trainer import train
 def main(dict_config: DictConfig):
     config = MainConfig.from_dict(dict_config)
 
-    dataset = Dataset.from_files(
-        config.dataset.adjacency_file,
-        config.dataset.graph_id_file,
-        config.dataset.graph_labels_file,
-        config.dataset.node_labels_file,
+    dataset = Dataset.generate(
+        config.dataset.n_nodes,
+        config.dataset.n_graphs,
+        config.dataset.generation_key,
     )
     train_dataset, val_dataset = Dataset.split(
-        dataset, split=0.8, key=config.dataset.key
+        dataset, split=0.8, key=config.dataset.split_key
     )
 
-    model = GNNClassifier(
+    model = GNNRanking(
         config.model.hidden_dim,
-        dataset.n_atoms,
         config.model.n_layers,
         key=config.model.key,
     )

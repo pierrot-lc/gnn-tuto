@@ -5,7 +5,7 @@ import jax.experimental.sparse as jsparse
 import jax.numpy as jnp
 import jax.random as jr
 from beartype import beartype
-from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray, Scalar, jaxtyped
+from jaxtyping import Array, Float, Int, PRNGKeyArray, jaxtyped
 
 
 class GConvLayer(eqx.Module):
@@ -13,8 +13,8 @@ class GConvLayer(eqx.Module):
     norm: nn.RMSNorm
 
     def __init__(self, hidden_dim: int, *, key: PRNGKeyArray):
-        self.linear = nn.Linear(hidden_dim, hidden_dim, use_bias=False, key=key)
-        self.norm = nn.RMSNorm(hidden_dim, use_bias=False)
+        self.linear = nn.Linear(hidden_dim, hidden_dim, key=key)
+        self.norm = nn.RMSNorm(hidden_dim)
 
     @jaxtyped(typechecker=beartype)
     def __call__(
@@ -36,8 +36,8 @@ class HiddenLayer(eqx.Module):
     norm: nn.RMSNorm
 
     def __init__(self, hidden_dim: int, *, key: PRNGKeyArray):
-        self.linear = nn.Linear(hidden_dim, hidden_dim, use_bias=False, key=key)
-        self.norm = nn.RMSNorm(hidden_dim, use_bias=False)
+        self.linear = nn.Linear(hidden_dim, hidden_dim, key=key)
+        self.norm = nn.RMSNorm(hidden_dim)
 
     def __call__(self, x: Float[Array, " hidden_dim"]) -> Float[Array, " hidden_dim"]:
         y = self.linear(x)
@@ -67,41 +67,32 @@ class GNN(eqx.Module):
         def scan_fn(x, layer):
             conv, hidden = eqx.combine(layer, static)
             x = conv(x, a)
-            # x = jax.vmap(hidden)(x)
+            x = jax.vmap(hidden)(x)
             return x, None
 
         x, _ = jax.lax.scan(scan_fn, x, dynamic)
         return x
 
 
-class GNNClassifier(eqx.Module):
-    embed: nn.Embedding
+class GNNRanking(eqx.Module):
     gnn: GNN
     predict: nn.Linear
+    hidden_dim: int
 
-    def __init__(
-        self, hidden_dim: int, n_embeddings: int, n_layers: int, *, key: PRNGKeyArray
-    ):
+    def __init__(self, hidden_dim: int, n_layers: int, *, key: PRNGKeyArray):
         super().__init__()
-        sk = iter(jr.split(key, 3))
-        self.embed = nn.Embedding(n_embeddings, hidden_dim, key=next(sk))
+        sk = iter(jr.split(key, 2))
         self.gnn = GNN(hidden_dim, n_layers, key=next(sk))
-        self.predict = nn.Linear(hidden_dim, "scalar", use_bias=True, key=next(sk))
+        self.predict = nn.Linear(hidden_dim, "scalar", key=next(sk))
+        self.hidden_dim = hidden_dim
 
+    @eqx.filter_jit
     @jaxtyped(typechecker=beartype)
     def __call__(
-        self,
-        x: Int[Array, " n_nodes"],
-        a: Int[jsparse.BCOO, "n_nodes n_nodes"],
-        mask: Bool[Array, " n_nodes"],
-    ) -> Scalar:
-        x = jax.vmap(self.embed)(x)
+        self, a: Int[jsparse.BCOO, "n_nodes n_nodes"]
+    ) -> Float[Array, " n_nodes"]:
+        n_nodes = a.shape[0]
+        x = jnp.ones((n_nodes, self.hidden_dim), dtype=jnp.float32)
         x = self.gnn(x, a)
-
-        # The embedding of the graph is the average of the nodes embeddings.
-        mask = jnp.expand_dims(mask, axis=1)
-        x = jnp.where(mask, x, 0.0)
-        x = jnp.sum(x, axis=0) / jnp.sum(mask)
-
-        x = self.predict(x)
+        x = jax.vmap(self.predict)(x)
         return x

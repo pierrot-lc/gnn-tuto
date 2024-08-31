@@ -6,12 +6,13 @@ import jax.numpy as jnp
 import jax.random as jr
 import optax
 from beartype import beartype
-from jaxtyping import Array, PRNGKeyArray, Scalar, jaxtyped
+from jaxtyping import Array, Bool, Float, PRNGKeyArray, Scalar, jaxtyped
+from scipy.stats import kendalltau
 from tqdm import tqdm
 from wandb.wandb_run import Run
 
 from .dataset import Dataset, GraphData
-from .gnn import GNNClassifier
+from .gnn import GNNRanking
 
 
 def key_source(key: PRNGKeyArray) -> Iterator[PRNGKeyArray]:
@@ -23,48 +24,101 @@ def key_source(key: PRNGKeyArray) -> Iterator[PRNGKeyArray]:
 def count_params(model: eqx.Module) -> int:
     """Count the number of parameters of the given equinox module."""
     # Replace the params of the PE module by None to filter them out.
-    model = jax.tree_util.tree_map_with_path(
-        lambda p, v: None if "positional_encoding" in jax.tree_util.keystr(p) else v,
-        model,
-    )
-    # jax.tree_util.tree_map_with_path(lambda p, _: print(p), model)
-
     params = eqx.filter(model, eqx.is_array)
-
     n_params = jax.tree.map(lambda p: jnp.prod(jnp.array(p.shape)), params)
     n_params = jnp.array(jax.tree.leaves(n_params))
     n_params = jnp.sum(n_params)
     return int(n_params)
 
 
-@jaxtyped(typechecker=beartype)
-def batch_loss(model: GNNClassifier, batch: GraphData) -> Scalar:
-    logits = jax.vmap(model)(batch.nodes, batch.adjacency, batch.mask)
-    loss = optax.losses.sigmoid_binary_cross_entropy(logits, batch.label)
+@eqx.filter_jit
+def margin_ranking_loss(
+    pred_scores: Float[Array, " n_nodes"],
+    true_scores: Float[Array, " n_nodes"],
+    mask: Bool[Array, " n_nodes"],
+    key: PRNGKeyArray,
+    margin: float = 1.0,
+    sampling_factor: float = 1.0,
+) -> Scalar:
+    """See https://pytorch.org/docs/stable/generated/torch.nn.MarginRankingLoss.html."""
+    n_nodes = len(pred_scores)
+    total_sampling = int(n_nodes * sampling_factor)
+    perms = jr.choice(
+        key,
+        jnp.arange(n_nodes),
+        (2, total_sampling),
+        replace=True,
+        p=mask / mask.sum(),  # Ignore masked nodes.
+    )
+
+    argsort = jnp.argsort(true_scores, descending=False)
+    pred_scores = pred_scores[argsort]
+    true_scores = true_scores[argsort]
+    ranks = jnp.arange(n_nodes)
+
+    x1_rank = ranks[perms[0]]
+    x2_rank = ranks[perms[1]]
+    x1_pred = pred_scores[perms[0]]
+    x2_pred = pred_scores[perms[1]]
+
+    y = jnp.sign(x1_rank - x2_rank)
+    y = jax.lax.stop_gradient(y)
+    loss = jnp.clip(-y * (x1_pred - x2_pred) + margin, min=0)
+
+    # Do not penalize if the true scores are equal.
+    x1_true = true_scores[perms[0]]
+    x2_true = true_scores[perms[1]]
+    loss = jnp.where(x1_true == x2_true, 0.0, loss)
+
     return jnp.mean(loss)
 
 
-@eqx.filter_jit
-def batch_metrics(model: GNNClassifier, batch: GraphData) -> dict[str, Array]:
-    logits = jax.vmap(model)(batch.nodes, batch.adjacency, batch.mask)
-    y_pred = logits > 0
-    y_true = batch.label == 1
+@jaxtyped(typechecker=beartype)
+def batch_loss(model: GNNRanking, batch: GraphData, key: PRNGKeyArray) -> Scalar:
+    batch_size = batch.scores.shape[0]
+    keys = jr.split(key, batch_size)
 
+    pred_scores = jax.vmap(model)(batch.adjacency)
+    losses = jax.vmap(margin_ranking_loss)(pred_scores, batch.scores, batch.mask, keys)
+    return jnp.mean(losses)
+
+
+def batch_metrics(
+    model: GNNRanking, batch: GraphData, key: PRNGKeyArray
+) -> dict[str, Array]:
     metrics = dict()
-    metrics["loss"] = optax.losses.sigmoid_binary_cross_entropy(logits, batch.label)
-    metrics["accuracy"] = y_pred == y_true
+    batch_size = batch.scores.shape[0]
+    keys = jr.split(key, batch_size)
+
+    pred_scores = jax.vmap(model)(batch.adjacency)
+    metrics["loss"] = jax.vmap(margin_ranking_loss)(
+        pred_scores, batch.scores, batch.mask, keys
+    )
+
+    kt_scores = jnp.array(
+        [
+            kendalltau(
+                pred_[mask], true_[mask], nan_policy="raise", method="auto"
+            ).statistic
+            for pred_, true_, mask in zip(pred_scores, batch.scores, batch.mask)
+        ]
+    )
+    # Score can be inf if all nodes have the same score.
+    kt_scores = jnp.where(jnp.isfinite(kt_scores), kt_scores, 0.0)
+    metrics["KT score"] = kt_scores
     return metrics
 
 
 @eqx.filter_jit
 @jaxtyped(typechecker=beartype)
 def batch_update(
-    model: GNNClassifier,
+    model: GNNRanking,
     batch: GraphData,
     optimizer: optax.GradientTransformation,
     opt_state: optax.OptState,
-) -> GNNClassifier:
-    grads = eqx.filter_grad(batch_loss)(model, batch)
+    key: PRNGKeyArray,
+) -> GNNRanking:
+    grads = eqx.filter_grad(batch_loss)(model, batch, key)
     params, static = eqx.partition(model, eqx.is_array)
     updates, opt_state = optimizer.update(grads, opt_state, params)
     params = optax.apply_updates(params, updates)
@@ -73,7 +127,7 @@ def batch_update(
 
 
 def eval(
-    model: GNNClassifier,
+    model: GNNRanking,
     dataset: Dataset,
     batch_size: int,
     eval_iter: int,
@@ -81,10 +135,11 @@ def eval(
     key: PRNGKeyArray,
 ) -> dict[str, float]:
     model = eqx.tree_inference(model, value=True)
+    keys = key_source(key)
     metrics = [
-        batch_metrics(model, batch)
+        batch_metrics(model, batch, next(keys))
         for batch in tqdm(
-            dataset.iter(batch_size, eval_iter, key),
+            dataset.iter(batch_size, eval_iter, next(keys)),
             desc="Eval",
             total=eval_iter,
             leave=False,
@@ -99,7 +154,7 @@ def eval(
 
 
 def train(
-    model: GNNClassifier,
+    model: GNNRanking,
     train_dataset: Dataset,
     val_dataset: Dataset,
     optimizer: optax.GradientTransformation,
@@ -124,7 +179,7 @@ def train(
         total=train_iter,
         leave=True,
     ):
-        model = batch_update(model, batch, optimizer, opt_state)
+        model = batch_update(model, batch, optimizer, opt_state, next(keys))
 
         if batch_id % eval_freq == 0:
             metrics = eval(model, train_dataset, batch_size, eval_iter, key=next(keys))

@@ -1,5 +1,4 @@
 from collections.abc import Iterator
-from pathlib import Path
 
 import equinox as eqx
 import jax.experimental.sparse as jsparse
@@ -7,7 +6,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import networkx as nx
 from beartype import beartype
-from jaxtyping import Array, Bool, Int, PRNGKeyArray, jaxtyped
+from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray, jaxtyped
 from tqdm import tqdm
 
 
@@ -16,12 +15,11 @@ class GraphData(eqx.Module):
         jsparse.BCOO, "n_nodes n_nodes"
     ]  # a[i, j] = 1 <=> node j is link to node i.
     edges: Int[Array, "n_edges 2"]  # e[n] = (j, i) <=> node j is linked to node i.
-    nodes: Int[Array, " n_nodes"]
+    scores: Float[Array, " n_nodes"]
     mask: Bool[Array, " n_nodes"]
-    label: Int[Array, ""]
 
     @classmethod
-    def from_networkx(cls, graph: nx.DiGraph, label: int) -> "GraphData":
+    def from_networkx(cls, graph: nx.DiGraph) -> "GraphData":
         n_nodes = len(graph)
         edges = jnp.array(nx.edges(graph), dtype=jnp.int32)
         adjacency = jsparse.BCOO(
@@ -33,12 +31,9 @@ class GraphData(eqx.Module):
             ),
             shape=(n_nodes, n_nodes),
         )
-        nodes = jnp.array(
-            [graph.nodes[n]["atom_id"] for n in range(n_nodes)], dtype=jnp.int32
-        )
+        scores = jnp.array([graph.nodes[i]["betweenness"] for i in range(len(graph))])
         mask = jnp.ones(n_nodes, dtype=jnp.bool_)
-        label = jnp.array(label, dtype=jnp.int32)
-        return cls(adjacency, edges, nodes, mask, label)
+        return cls(adjacency, edges, scores, mask)
 
     @classmethod
     def pad(cls, graph: "GraphData", max_nodes: int, max_edges: int) -> "GraphData":
@@ -53,20 +48,19 @@ class GraphData(eqx.Module):
             (jnp.ones(max_edges, dtype=jnp.int32), jnp.flip(edges, axis=1)),
             shape=(max_nodes, max_nodes),
         )
-        nodes = jnp.pad(graph.nodes, (0, max_nodes - n_nodes))
+        scores = jnp.pad(graph.scores, (0, max_nodes - n_nodes))
         mask = jnp.pad(
             graph.mask, (0, max_nodes - n_nodes), mode="constant", constant_values=False
         )
-        return cls(adjacency, edges, nodes, mask, graph.label)
+        return cls(adjacency, edges, scores, mask)
 
     @classmethod
     def stack(cls, graphs: list["GraphData"]) -> "GraphData":
         return cls(
             adjacency=jsparse.sparsify(jnp.stack)([g.adjacency for g in graphs]),
             edges=jnp.stack([g.edges for g in graphs]),
-            nodes=jnp.stack([g.nodes for g in graphs]),
+            scores=jnp.stack([g.scores for g in graphs]),
             mask=jnp.stack([g.mask for g in graphs]),
-            label=jnp.stack([g.label for g in graphs]),
         )
 
 
@@ -91,10 +85,6 @@ class Dataset:
     def __getitem__(self, index: int) -> GraphData:
         return self.graphs[index]
 
-    @property
-    def n_atoms(self) -> int:
-        return max(jnp.max(g.nodes) for g in self.graphs) + 1
-
     @classmethod
     def split(
         cls, dataset: "Dataset", split: float, *, key: PRNGKeyArray
@@ -108,67 +98,32 @@ class Dataset:
         return cls(training_graphs), cls(val_graphs)
 
     @classmethod
-    def from_files(
-        cls,
-        adj_file: Path,
-        graph_id_file: Path,
-        graph_labels_file: Path,
-        node_labels_file: Path,
-    ) -> "Dataset":
-        graph = nx.read_adjlist(adj_file, create_using=nx.DiGraph, delimiter=",")
-
-        # Relabel all nodes from 0 to N-1
-        graph = nx.relabel_nodes(
-            graph,
-            {old_id: new_id for new_id, old_id in enumerate(graph.nodes)},
-        )
-
-        # Read the labels.
-        with open(node_labels_file, "r") as file:
-            node_labels = [int(line.strip()) for line in file.readlines()]
-        node_labels = {node_id: label for node_id, label in enumerate(node_labels)}
-        nx.set_node_attributes(graph, node_labels, "atom_id")
-
-        # Split the graph into the multiple subgraphs.
-        with open(graph_id_file, "r") as file:
-            graph_ids = [int(line.strip()) for line in file.readlines()]
-
-        assert list(sorted(graph_ids)) == graph_ids
-
+    def generate(cls, n_nodes: int, n_graphs: int, key: PRNGKeyArray) -> "Dataset":
         graphs = []
-        current_node_id = 1
-        for graph_id in tqdm(
-            sorted(set(graph_ids)), desc="Splitting into subgraphs", leave=False
-        ):
-            node_ids = []
-            while (
-                current_node_id < len(graph_ids)
-                and graph_ids[current_node_id] == graph_id
-            ):
-                node_ids.append(current_node_id)
-                current_node_id += 1
+        seeds = [int(jr.key_data(sk)[1]) for sk in jr.split(key, n_graphs)]
+        for seed in tqdm(seeds, desc="Generating graphs", leave=False):
+            graph = nx.erdos_renyi_graph(n_nodes, seed=seed, p=0.05, directed=True)
 
-            subgraph = nx.subgraph(graph, node_ids).copy()
-            subgraph = nx.relabel_nodes(
-                subgraph,
-                {old_id: new_id for new_id, old_id in enumerate(subgraph.nodes)},
+            # Keep the largest connected component.
+            nodes = max(nx.weakly_connected_components(graph), key=len)
+            graph = graph.subgraph(nodes).copy()
+            graph = nx.relabel_nodes(
+                graph, {old_id: new_id for new_id, old_id in enumerate(graph.nodes)}
+            )  # Relabel nodes from 0 to N.
+
+            # Label the nodes.
+            scores = nx.betweenness_centrality(
+                graph, k=None, normalized=False, weight=None
             )
-            graphs.append(subgraph)
+            nx.set_node_attributes(graph, scores, "betweenness")
 
-        # Graph labels.
-        with open(graph_labels_file, "r") as file:
-            graph_labels = [int(line.strip()) for line in file.readlines()]
-        assert len(graphs) == len(graph_labels)
-
-        # Remove some weird graphs.
-        graphs = [g for g in graphs if g.number_of_nodes() > 1]
-        graphs = [g for g in graphs if g.number_of_edges() > 0]
+            graphs.append(graph)
 
         # To Graph.
         graphs = [
-            GraphData.from_networkx(g, l)
-            for g, l in tqdm(
-                zip(graphs, graph_labels),
+            GraphData.from_networkx(graph)
+            for graph in tqdm(
+                graphs,
                 desc="To jax array",
                 total=len(graphs),
                 leave=False,

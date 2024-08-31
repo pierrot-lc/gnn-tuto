@@ -3,9 +3,10 @@ defaults:
   - _self_
 
 dataset:
-  root: "./data/NCI1"
-  prefix: "NCI1"
-  key: 0
+  n_nodes: 100
+  n_graphs: 1000
+  generation_key: 0
+  split_key: 1
 
 model:
   hidden_dim: 92
