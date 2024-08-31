@@ -111,7 +111,7 @@ class Dataset:
                 graph, {old_id: new_id for new_id, old_id in enumerate(graph.nodes)}
             )  # Relabel nodes from 0 to N.
 
-            # Label the nodes.
+            # Score the nodes.
             scores = nx.betweenness_centrality(
                 graph, k=None, normalized=False, weight=None
             )

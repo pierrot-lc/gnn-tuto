@@ -6,15 +6,16 @@ dataset:
   n_nodes: 100
   n_graphs: 1000
   generation_key: 0
-  split_key: 1
+  split_key: 0
 
 model:
-  hidden_dim: 92
-  n_layers: 4
+  hidden_dim: 64
+  n_layers: 5
+  conv_type: "adj"
   key: 66
 
 trainer:
-  learning_rate: 3e-5
+  learning_rate: 1e-3
   batch_size: 32
   train_iter: 10000
   eval_iter: 20

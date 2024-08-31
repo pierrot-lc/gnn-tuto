@@ -12,7 +12,7 @@ from tqdm import tqdm
 from wandb.wandb_run import Run
 
 from .dataset import Dataset, GraphData
-from .gnn import GNNRanking
+from .gnn import RankingModel
 
 
 def key_source(key: PRNGKeyArray) -> Iterator[PRNGKeyArray]:
@@ -74,23 +74,23 @@ def margin_ranking_loss(
 
 
 @jaxtyped(typechecker=beartype)
-def batch_loss(model: GNNRanking, batch: GraphData, key: PRNGKeyArray) -> Scalar:
+def batch_loss(model: RankingModel, batch: GraphData, key: PRNGKeyArray) -> Scalar:
     batch_size = batch.scores.shape[0]
     keys = jr.split(key, batch_size)
 
-    pred_scores = jax.vmap(model)(batch.adjacency)
+    pred_scores = jax.vmap(model)(batch.adjacency, batch.edges)
     losses = jax.vmap(margin_ranking_loss)(pred_scores, batch.scores, batch.mask, keys)
     return jnp.mean(losses)
 
 
 def batch_metrics(
-    model: GNNRanking, batch: GraphData, key: PRNGKeyArray
+    model: RankingModel, batch: GraphData, key: PRNGKeyArray
 ) -> dict[str, Array]:
     metrics = dict()
     batch_size = batch.scores.shape[0]
     keys = jr.split(key, batch_size)
 
-    pred_scores = jax.vmap(model)(batch.adjacency)
+    pred_scores = jax.vmap(model)(batch.adjacency, batch.edges)
     metrics["loss"] = jax.vmap(margin_ranking_loss)(
         pred_scores, batch.scores, batch.mask, keys
     )
@@ -112,12 +112,12 @@ def batch_metrics(
 @eqx.filter_jit
 @jaxtyped(typechecker=beartype)
 def batch_update(
-    model: GNNRanking,
+    model: RankingModel,
     batch: GraphData,
     optimizer: optax.GradientTransformation,
     opt_state: optax.OptState,
     key: PRNGKeyArray,
-) -> GNNRanking:
+) -> RankingModel:
     grads = eqx.filter_grad(batch_loss)(model, batch, key)
     params, static = eqx.partition(model, eqx.is_array)
     updates, opt_state = optimizer.update(grads, opt_state, params)
@@ -127,7 +127,7 @@ def batch_update(
 
 
 def eval(
-    model: GNNRanking,
+    model: RankingModel,
     dataset: Dataset,
     batch_size: int,
     eval_iter: int,
@@ -154,7 +154,7 @@ def eval(
 
 
 def train(
-    model: GNNRanking,
+    model: RankingModel,
     train_dataset: Dataset,
     val_dataset: Dataset,
     optimizer: optax.GradientTransformation,
@@ -172,6 +172,8 @@ def train(
     logger.summary["n_params"] = count_params(model)
     logger.summary["training_size"] = len(train_dataset)
     logger.summary["validation_size"] = len(val_dataset)
+    logger.summary["n_nodes"] = train_dataset.graphs[0].scores.shape[0]
+    logger.summary["n_edges"] = train_dataset.graphs[0].edges.shape[0]
 
     for batch_id, batch in tqdm(
         enumerate(train_dataset.iter(batch_size, train_iter, next(keys))),

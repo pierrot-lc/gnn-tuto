@@ -4,7 +4,7 @@ import wandb
 from configs.template import MainConfig
 from omegaconf import DictConfig, OmegaConf
 from src.dataset import Dataset
-from src.gnn import GNNRanking
+from src.gnn import RankingModel
 from src.trainer import train
 
 
@@ -21,9 +21,10 @@ def main(dict_config: DictConfig):
         dataset, split=0.8, key=config.dataset.split_key
     )
 
-    model = GNNRanking(
+    model = RankingModel(
         config.model.hidden_dim,
         config.model.n_layers,
+        config.model.conv_type,
         key=config.model.key,
     )
 

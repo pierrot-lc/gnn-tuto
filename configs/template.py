@@ -23,6 +23,7 @@ class DatasetConfig:
 class ModelConfig:
     hidden_dim: int
     n_layers: int
+    conv_type: str
     key: PRNGKeyArray
 
     def __post_init__(self):
