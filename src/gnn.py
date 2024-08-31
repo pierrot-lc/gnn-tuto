@@ -52,7 +52,7 @@ class GConvLayerEdges(eqx.Module):
         d = jax.ops.segment_sum(
             jnp.ones_like(m), segment_ids=e[:, 1], num_segments=len(x)
         )
-        m = jax.ops.segment_sum(m, segment_ids=e[:, 1], num_segments=len(x))
+        m = jax.ops.segment_max(m, segment_ids=e[:, 1], num_segments=len(x))
         m = jnp.where(d == 0, 0.0, m)
 
         x = jax.vmap(self.norm)(x + m)

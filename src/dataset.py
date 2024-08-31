@@ -31,7 +31,7 @@ class GraphData(eqx.Module):
             ),
             shape=(n_nodes, n_nodes),
         )
-        scores = jnp.array([graph.nodes[i]["betweenness"] for i in range(len(graph))])
+        scores = jnp.array([graph.nodes[i]["scores"] for i in range(len(graph))])
         mask = jnp.ones(n_nodes, dtype=jnp.bool_)
         return cls(adjacency, edges, scores, mask)
 
@@ -111,11 +111,9 @@ class Dataset:
                 graph, {old_id: new_id for new_id, old_id in enumerate(graph.nodes)}
             )  # Relabel nodes from 0 to N.
 
-            # Score the nodes.
-            scores = nx.betweenness_centrality(
-                graph, k=None, normalized=False, weight=None
-            )
-            nx.set_node_attributes(graph, scores, "betweenness")
+            # scores = nx.clustering(graph)
+            scores = nx.pagerank(graph)
+            nx.set_node_attributes(graph, scores, "scores")
 
             graphs.append(graph)
 
