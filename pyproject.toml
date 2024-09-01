@@ -1,6 +1,5 @@
 [project]
 name = "gnn-tuto"
-version = "0.1.0"
 description = "GNN tutorial with Jax and Equinox"
 authors = [
     {name = "Pierrot LC", email = "pierrotlc@proton.me"},

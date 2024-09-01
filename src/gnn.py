@@ -53,6 +53,10 @@ class GConvLayer(eqx.Module):
 class GATLayer(eqx.Module):
     """Graph attention layer from the Graph Attention Networks paper.
 
+    This serves as an example of how one could use the list of edges to create a complex
+    GNN. The main function is `jax.ops.segment_sum`. Note that other functions can be
+    used to apply different aggregation schemes (such as `jax.ops.segment_min`).
+
     This implementation is a single-head layer with an added norm and residual
     connection.
 

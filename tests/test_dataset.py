@@ -11,7 +11,7 @@ def random_graph(n_nodes: int, directed: bool) -> nx.DiGraph:
     if not nx.is_directed(graph):
         graph = nx.to_directed(graph)
 
-    nx.set_node_attributes(graph, 1, "label")
+    nx.set_node_attributes(graph, 1, "scores")
     return graph
 
 
