@@ -3,21 +3,21 @@ defaults:
   - _self_
 
 dataset:
-  n_nodes: 1000
-  n_graphs: 100
+  n_nodes: 100
+  n_graphs: 1000
   generation_key: 0
   split_key: 0
 
 model:
-  hidden_dim: 64
+  hidden_dim: 128
   n_layers: 5
-  conv_type: "edges"
+  conv_type: "gat"  # "gat" or "sum"
   key: 66
 
 trainer:
   learning_rate: 3e-4
-  batch_size: 32
-  train_iter: 1000
+  batch_size: 16
+  train_iter: 50000
   eval_iter: 20
   eval_freq: 100
   key: 42

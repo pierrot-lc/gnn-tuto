@@ -16,6 +16,7 @@ from .gnn import RankingModel
 
 
 def key_source(key: PRNGKeyArray) -> Iterator[PRNGKeyArray]:
+    """Infinite source of random keys."""
     while True:
         key, sk = jr.split(key)
         yield sk
@@ -23,7 +24,6 @@ def key_source(key: PRNGKeyArray) -> Iterator[PRNGKeyArray]:
 
 def count_params(model: eqx.Module) -> int:
     """Count the number of parameters of the given equinox module."""
-    # Replace the params of the PE module by None to filter them out.
     params = eqx.filter(model, eqx.is_array)
     n_params = jax.tree.map(lambda p: jnp.prod(jnp.array(p.shape)), params)
     n_params = jnp.array(jax.tree.leaves(n_params))

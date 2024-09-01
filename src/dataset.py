@@ -37,12 +37,20 @@ class GraphData(eqx.Module):
 
     @classmethod
     def pad(cls, graph: "GraphData", max_nodes: int, max_edges: int) -> "GraphData":
+        """Add virtual nodes and edges to the given graph. The mask can be used to
+        retrieve the original nodes.
+
+        Make sure that at least one virtual node is added. Virtual edges point to the
+        last virtual node (so that they do not interfere with real nodes).
+        """
         n_nodes, n_edges = len(graph.adjacency), len(graph.edges)
+        assert max_nodes > n_nodes, "At least one virtual node must be created."
+
         edges = jnp.pad(
             graph.edges,
             ((0, max_edges - n_edges), (0, 0)),
             mode="constant",
-            constant_values=max_nodes - 1,
+            constant_values=max_nodes - 1,  # Virtual node.
         )
         adjacency = jsparse.BCOO(
             (jnp.ones(max_edges, dtype=jnp.int32), jnp.flip(edges, axis=1)),
@@ -89,6 +97,7 @@ class Dataset:
     def split(
         cls, dataset: "Dataset", split: float, *, key: PRNGKeyArray
     ) -> tuple["Dataset", "Dataset"]:
+        """Randomly split the dataset into two non-overlapping subsets."""
         assert 0 <= split <= 1
 
         training_size = int(len(dataset) * split)
@@ -99,10 +108,21 @@ class Dataset:
 
     @classmethod
     def generate(cls, n_nodes: int, n_graphs: int, key: PRNGKeyArray) -> "Dataset":
+        """Generate a random dataset to learn from.
+
+        The graphs are generated following the Erdős-Rényi model. The nodes' scores are
+        the clustering score.
+
+        ---
+        See:
+            https://networkx.org/documentation/stable/reference/generated/networkx.generators.random_graphs.erdos_renyi_graph.html
+            https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.cluster.clustering.html
+        """
         graphs = []
         seeds = [int(jr.key_data(sk)[1]) for sk in jr.split(key, n_graphs)]
         for seed in tqdm(seeds, desc="Generating graphs", leave=False):
-            graph = nx.erdos_renyi_graph(n_nodes, seed=seed, p=0.05, directed=True)
+            graph = nx.erdos_renyi_graph(n_nodes, seed=seed, p=0.05, directed=False)
+            graph = nx.to_directed(graph)
 
             # Keep the largest connected component.
             nodes = max(nx.weakly_connected_components(graph), key=len)
@@ -111,8 +131,7 @@ class Dataset:
                 graph, {old_id: new_id for new_id, old_id in enumerate(graph.nodes)}
             )  # Relabel nodes from 0 to N.
 
-            # scores = nx.clustering(graph)
-            scores = nx.pagerank(graph)
+            scores = nx.clustering(graph)
             nx.set_node_attributes(graph, scores, "scores")
 
             graphs.append(graph)
@@ -132,7 +151,7 @@ class Dataset:
         max_nodes = max(len(g.adjacency) for g in graphs)
         max_edges = max(len(g.edges) for g in graphs)
         graphs = [
-            GraphData.pad(g, max_nodes, max_edges)
+            GraphData.pad(g, max_nodes + 1, max_edges)
             for g in tqdm(graphs, desc="Padding graphs", leave=False)
         ]
 
