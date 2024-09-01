@@ -31,6 +31,8 @@ python3 main.py
 The training is logged to WandB. Have a look to the [Hydra][hydra] (for HPs
 config) and [WandB][wandb] (for logging) docs for more.
 
+You can have a look at my trainings [here][wandb-space].
+
 ## Sources
 
 - [GNN introduction from distill.pub][gnn-intro]
@@ -43,3 +45,4 @@ config) and [WandB][wandb] (for logging) docs for more.
 [margin-ranking-loss]:  https://pytorch.org/docs/stable/generated/torch.nn.MarginRankingLoss.html
 [node-clustering]:      https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.cluster.clustering.html
 [wandb]:                https://wandb.ai/
+[wandb-space]:          https://wandb.ai/pierrotlc/gnn-tuto
