@@ -65,11 +65,6 @@ def margin_ranking_loss(
     y = jax.lax.stop_gradient(y)
     loss = jnp.clip(-y * (x1_pred - x2_pred) + margin, min=0)
 
-    # Do not penalize if the true scores are equal.
-    x1_true = true_scores[perms[0]]
-    x2_true = true_scores[perms[1]]
-    loss = jnp.where(x1_true == x2_true, 0.0, loss)
-
     return jnp.mean(loss)
 
 
