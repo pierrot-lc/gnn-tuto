@@ -1,5 +1,7 @@
 # Graph Neural Networks from Scratch with JAX
 
+![JAX and Equinox illustration](./.illustration.png)
+
 This repo is an example of an implementation of GNNs using JAX. It contains two
 implementations:
 
