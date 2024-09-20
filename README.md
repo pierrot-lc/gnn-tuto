@@ -2,7 +2,7 @@
 
 ![JAX and Equinox illustration](./.illustration.png)
 
-This repo is an example of an implementation of GNNs using JAX. It contains two
+This repo is an implementation example of GNNs using JAX. It contains two
 implementations:
 
 1. The standard GCN using the sum aggregation implementated with the adjacency
@@ -10,7 +10,8 @@ implementations:
 2. A more modern [GAT][gat-paper] implemented using the list of edges.
 
 Those two implementations should give the reader the keys to implement its own
-GNN.
+GNN. You can also have a look at the following [blogpost][blogpost] for a more
+in-depth presentation.
 
 ## Training objective
 
@@ -40,11 +41,12 @@ You can have a look at my trainings [here][wandb-space].
 - [GNN introduction from distill.pub][gnn-intro]
 - [GAT paper][gat-paper]
 
+[blogpost]:             https://pierrot-lc.github.io/website/2024/09/02/tuto-gnn.html
 [gat-paper]:            https://arxiv.org/abs/1710.10903
 [gnn-intro]:            https://distill.pub/2021/gnn-intro/
 [hydra]:                https://hydra.cc/
 [kendall-rank]:         https://en.wikipedia.org/wiki/Kendall_rank_correlation_coefficient
 [margin-ranking-loss]:  https://pytorch.org/docs/stable/generated/torch.nn.MarginRankingLoss.html
 [node-clustering]:      https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.cluster.clustering.html
-[wandb]:                https://wandb.ai/
 [wandb-space]:          https://wandb.ai/pierrotlc/gnn-tuto
+[wandb]:                https://wandb.ai/
